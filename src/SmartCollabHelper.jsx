@@ -486,7 +486,7 @@ export default function SmartCollabHelper() {
       const response = await fetch("/api/chat", {        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-5",
           max_tokens: 1000,
           stream: true,
           system: SYSTEM_PROMPT,
