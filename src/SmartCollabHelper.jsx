@@ -448,7 +448,6 @@ export default function SmartCollabHelper() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
   const [error, setError] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [feedback, setFeedback] = useState({});
@@ -460,7 +459,7 @@ export default function SmartCollabHelper() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, loading, streamingText]);
+  }, [messages, loading]);
 
   useEffect(() => {
     if (inputRef.current) {
@@ -479,16 +478,15 @@ export default function SmartCollabHelper() {
     setMessages(newMessages);
     setInput("");
     setLoading(true);
-    setStreamingText("");
     setError(null);
 
     try {
-      const response = await fetch("/api/chat", {        method: "POST",
+      const response = await fetch("/api/chat", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-5",
           max_tokens: 1000,
-          stream: true,
           system: SYSTEM_PROMPT,
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
         }),
@@ -498,44 +496,16 @@ export default function SmartCollabHelper() {
         throw new Error(`API returned ${response.status}`);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let accumulated = "";
-      let buffer = "";
+      const data = await response.json();
+      const reply = data.content
+        .map((block) => (block.type === "text" ? block.text : ""))
+        .filter(Boolean)
+        .join("\n");
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6).trim();
-          if (!data || data === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(data);
-            if (
-              parsed.type === "content_block_delta" &&
-              parsed.delta?.type === "text_delta"
-            ) {
-              accumulated += parsed.delta.text;
-              setStreamingText(accumulated);
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      setMessages([...newMessages, { role: "assistant", content: accumulated }]);
-      setStreamingText("");
+      setMessages([...newMessages, { role: "assistant", content: reply }]);
     } catch (err) {
       console.error(err);
       setError("Couldn't reach the model. Try again in a moment.");
-      setStreamingText("");
     } finally {
       setLoading(false);
       setTimeout(() => inputRef.current?.focus(), 0);
@@ -558,7 +528,6 @@ export default function SmartCollabHelper() {
     setMessages([]);
     setError(null);
     setInput("");
-    setStreamingText("");
     setFeedback({});
     setConfirmReset(false);
     setTimeout(() => inputRef.current?.focus(), 0);
@@ -678,17 +647,7 @@ export default function SmartCollabHelper() {
           />
         ))}
 
-        {loading && streamingText && (
-          <Message
-            role="assistant"
-            content={streamingText}
-            isMobile={isMobile}
-            isStreaming
-            showFeedback={false}
-          />
-        )}
-
-        {loading && !streamingText && (
+        {loading && (
           <div
             style={{
               maxWidth: "720px",
@@ -850,7 +809,6 @@ function EmptyState({ isMobile, onPick }) {
         contract details page or DingTalk group 44719403.
       </p>
 
-      {/* Tab bar */}
       <div
         ref={tabsRef}
         style={{
@@ -899,7 +857,6 @@ function EmptyState({ isMobile, onPick }) {
         })}
       </div>
 
-      {/* Active category blurb */}
       <p
         style={{
           fontSize: "12px",
@@ -912,7 +869,6 @@ function EmptyState({ isMobile, onPick }) {
         {active.blurb}
       </p>
 
-      {/* Prompt cards */}
       <div
         style={{
           display: "grid",
@@ -963,7 +919,6 @@ function Message({
   role,
   content,
   isMobile,
-  isStreaming,
   showFeedback,
   feedback,
   onFeedback,
@@ -1005,22 +960,9 @@ function Message({
         }}
       >
         <Markdown content={content} isUser={isUser} />
-        {isStreaming && (
-          <span
-            style={{
-              display: "inline-block",
-              width: "6px",
-              height: "14px",
-              background: "#1a1a1a",
-              marginLeft: "2px",
-              verticalAlign: "middle",
-              animation: "blink 1s infinite",
-            }}
-          />
-        )}
       </div>
 
-      {!isUser && !isStreaming && content && (
+      {!isUser && content && (
         <div
           style={{
             display: "flex",
@@ -1052,13 +994,6 @@ function Message({
           )}
         </div>
       )}
-
-      <style>{`
-        @keyframes blink {
-          0%, 50% { opacity: 1; }
-          51%, 100% { opacity: 0; }
-        }
-      `}</style>
     </div>
   );
 }
@@ -1263,7 +1198,7 @@ function Inline({ text, isUser }) {
             );
           case "link":
             return (
-              <a
+              
                 key={i}
                 href={t.url}
                 target="_blank"
@@ -1281,7 +1216,7 @@ function Inline({ text, isUser }) {
             );
           case "url":
             return (
-              <a
+              
                 key={i}
                 href={t.url}
                 target="_blank"
@@ -1300,7 +1235,7 @@ function Inline({ text, isUser }) {
             );
           case "email":
             return (
-              <a
+              
                 key={i}
                 href={`mailto:${t.email}`}
                 style={{
@@ -1327,7 +1262,6 @@ function tokenizeInline(text) {
   let i = 0;
 
   while (i < text.length) {
-    // `code`
     if (text[i] === "`") {
       const end = text.indexOf("`", i + 1);
       if (end !== -1) {
@@ -1337,7 +1271,6 @@ function tokenizeInline(text) {
       }
     }
 
-    // [text](url)
     if (text[i] === "[") {
       const closeBracket = text.indexOf("]", i + 1);
       if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
@@ -1352,7 +1285,6 @@ function tokenizeInline(text) {
       }
     }
 
-    // **bold**
     if (text[i] === "*" && text[i + 1] === "*") {
       const end = text.indexOf("**", i + 2);
       if (end !== -1) {
@@ -1362,7 +1294,6 @@ function tokenizeInline(text) {
       }
     }
 
-    // *italic*
     if (text[i] === "*" && text[i + 1] !== "*" && text[i - 1] !== "*") {
       let end = -1;
       for (let j = i + 1; j < text.length; j++) {
@@ -1378,7 +1309,6 @@ function tokenizeInline(text) {
       }
     }
 
-    // bare URL
     const urlMatch = text.slice(i).match(/^https?:\/\/[^\s<>"]+[^\s<>".,;:!?)\]]/);
     if (urlMatch) {
       tokens.push({ type: "url", url: urlMatch[0] });
@@ -1386,7 +1316,6 @@ function tokenizeInline(text) {
       continue;
     }
 
-    // bare email (only at boundary)
     if (i === 0 || /[\s(>,]/.test(text[i - 1])) {
       const emailMatch = text.slice(i).match(/^[\w.+-]+@[\w-]+\.[\w.-]+/);
       if (emailMatch) {
@@ -1396,7 +1325,6 @@ function tokenizeInline(text) {
       }
     }
 
-    // plain text — accumulate until next special char
     let plainEnd = i + 1;
     while (plainEnd < text.length) {
       const c = text[plainEnd];
