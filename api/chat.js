@@ -19,24 +19,10 @@ export default async function handler(req, res) {
       body: JSON.stringify(req.body),
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      return res.status(response.status).send(text);
-    }
-
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-
-    const reader = response.body.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      res.write(value);
-    }
-    res.end();
+    const data = await response.json();
+    return res.status(response.status).json(data);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: error.message });
+    console.error("Proxy error:", error);
+    return res.status(500).json({ error: error.message });
   }
 }
